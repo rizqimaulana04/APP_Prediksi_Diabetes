@@ -11,6 +11,7 @@ from sklearn.metrics import (
 from imblearn.over_sampling import SMOTE
 import numpy as np
 
+# Konfigurasi halaman
 st.set_page_config(page_title="Prediksi Risiko Diabetes", layout="centered")
 st.title("📊 Aplikasi Prediksi Risiko Diabetes")
 st.markdown("""
@@ -26,7 +27,7 @@ except FileNotFoundError:
     st.error("❌ File tidak ditemukan: pastikan `diabetes_prediction_dataset.csv` ada di folder.")
     st.stop()
 
-# Tampilkan 20 baris pertama dari dataset
+# Tampilkan 20 baris pertama
 st.subheader("📂 Dataset (20 Baris Awal)")
 st.dataframe(df.head(20))
 
@@ -35,6 +36,7 @@ fitur = [
     "gender", "age", "bmi", "HbA1c_level",
     "blood_glucose_level", "hypertension", "heart_disease", "smoking_history"
 ]
+
 if "diabetes" not in df.columns:
     st.error("❌ Kolom target 'diabetes' tidak ditemukan.")
     st.stop()
@@ -42,6 +44,10 @@ if "diabetes" not in df.columns:
 # Preprocessing
 X = pd.get_dummies(df[fitur], drop_first=True)
 y = df["diabetes"]
+
+# Pastikan target y bertipe numerik (0/1)
+if y.dtype == object:
+    y = y.map({"Yes": 1, "No": 0})
 
 # Split dan oversampling
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -110,7 +116,7 @@ plt.legend()
 st.pyplot(plt.gcf())
 plt.clf()
 
-# Input Form
+# Form Input
 st.subheader("🧮 Prediksi Risiko Diabetes")
 with st.form("form_input"):
     gender = st.selectbox("Gender:", ["Male", "Female"])
@@ -120,10 +126,9 @@ with st.form("form_input"):
     glu = st.number_input("Kadar Glukosa Darah (mg/dL):", 70, 300, 120)
     hypertension = st.selectbox("Riwayat Hipertensi:", ["Tidak", "Ya"])
     heart = st.selectbox("Riwayat Penyakit Jantung:", ["Tidak", "Ya"])
-    smoking = st.selectbox("Riwayat Merokok:", df["smoking_history"].unique().tolist())
+    smoking = st.selectbox("Riwayat Merokok:", df["smoking_history"].dropna().unique().tolist())
     ok = st.form_submit_button("Prediksi Risiko")
 
-# Prediksi
 if ok:
     inp = pd.DataFrame([{
         "gender_Male": int(gender == "Male"),
