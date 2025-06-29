@@ -11,27 +11,30 @@ from sklearn.metrics import (
 from imblearn.over_sampling import SMOTE
 import numpy as np
 
-# Konfigurasi halaman
+# -------------------- Konfigurasi Halaman --------------------
 st.set_page_config(page_title="Prediksi Risiko Diabetes", layout="centered")
 st.title("📊 Aplikasi Prediksi Risiko Diabetes")
 st.markdown("""
-Aplikasi ini menggunakan algoritma **Random Forest** yang dilatih dari data kesehatan untuk memprediksi tingkat risiko diabetes seseorang.  
-Masukkan data pribadi seperti usia, BMI, kadar gula darah, dan lainnya lalu sistem akan mengklasifikasikan risiko Anda ke dalam kategori **Rendah, Sedang, atau Tinggi**.  
+Aplikasi ini menggunakan algoritma **Random Forest** yang dilatih dari data kesehatan untuk memprediksi tingkat risiko diabetes seseorang.
+Masukkan data pribadi seperti usia, BMI, kadar gula darah, dan lainnya lalu sistem akan mengklasifikasikan risiko Anda ke dalam kategori **Rendah, Sedang, atau Tinggi**.
 """)
 
-# Load dataset
+# -------------------- Load Dataset --------------------
+@st.cache_data
+def load_data():
+    return pd.read_csv("diabetes_prediction_dataset.csv")
+
 try:
-    df = pd.read_csv("diabetes_prediction_dataset.csv")
+    df = load_data()
     st.success("✅ Dataset berhasil dimuat!")
 except FileNotFoundError:
     st.error("❌ File tidak ditemukan: pastikan `diabetes_prediction_dataset.csv` ada di folder.")
     st.stop()
 
-# Tampilkan 20 baris pertama
 st.subheader("📂 Dataset (20 Baris Awal)")
 st.dataframe(df.head(20))
 
-# Fitur dan target
+# -------------------- Preprocessing --------------------
 fitur = [
     "gender", "age", "bmi", "HbA1c_level",
     "blood_glucose_level", "hypertension", "heart_disease", "smoking_history"
@@ -41,38 +44,38 @@ if "diabetes" not in df.columns:
     st.error("❌ Kolom target 'diabetes' tidak ditemukan.")
     st.stop()
 
-# Preprocessing
 X = pd.get_dummies(df[fitur], drop_first=True)
 y = df["diabetes"]
-
-# Pastikan target y bertipe numerik (0/1)
 if y.dtype == object:
     y = y.map({"Yes": 1, "No": 0})
 
-# Split dan oversampling
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-sm = SMOTE(random_state=42)
-X_train_res, y_train_res = sm.fit_resample(X_train, y_train)
 
-# Model
-clf = RandomForestClassifier(n_estimators=100, random_state=42)
-clf.fit(X_train_res, y_train_res)
+# -------------------- Load Model + Oversample --------------------
+@st.cache_resource
+def train_model(X_train, y_train):
+    sm = SMOTE(random_state=42)
+    X_res, y_res = sm.fit_resample(X_train, y_train)
+    clf = RandomForestClassifier(n_estimators=100, random_state=42)
+    clf.fit(X_res, y_res)
+    return clf, X_res, y_res
+
+clf, X_train_res, y_train_res = train_model(X_train, y_train)
+
+# -------------------- Evaluasi --------------------
 y_pred = clf.predict(X_test)
-
-# Evaluasi
 st.subheader("📈 Evaluasi Model")
 st.write(f"Akurasi Model: **{accuracy_score(y_test, y_pred):.2f}**")
 
-# Classification Report
 st.subheader("📑 Classification Report")
 st.text(classification_report(y_test, y_pred))
 
-# Feature Importance
+# -------------------- Feature Importance --------------------
 st.subheader("📌 Feature Importance")
-importances = clf.feature_importances_
-feat_names = X.columns
-feat_df = pd.DataFrame({"Fitur": feat_names, "Importance": importances})
-feat_df = feat_df.sort_values(by="Importance", ascending=False)
+feat_df = pd.DataFrame({
+    "Fitur": X.columns,
+    "Importance": clf.feature_importances_
+}).sort_values(by="Importance", ascending=False)
 
 plt.figure(figsize=(8, 4))
 sns.barplot(x="Importance", y="Fitur", data=feat_df)
@@ -80,7 +83,7 @@ plt.title("Fitur yang Paling Berpengaruh")
 st.pyplot(plt.gcf())
 plt.clf()
 
-# ROC Curve
+# -------------------- ROC Curve --------------------
 st.subheader("📈 ROC Curve")
 y_proba = clf.predict_proba(X_test)[:, 1]
 fpr, tpr, _ = roc_curve(y_test, y_proba)
@@ -96,15 +99,17 @@ plt.legend(loc="lower right")
 st.pyplot(plt.gcf())
 plt.clf()
 
-# Learning Curve
-st.subheader("📚 Learning Curve")
-train_sizes, train_scores, test_scores = learning_curve(
-    clf, X_train_res, y_train_res, cv=5, scoring='accuracy', n_jobs=-1,
-    train_sizes=np.linspace(0.1, 1.0, 5)
-)
+# -------------------- Learning Curve --------------------
+@st.cache_data
+def get_learning_curve(model, X, y):
+    train_sizes, train_scores, test_scores = learning_curve(
+        model, X, y, cv=5, scoring='accuracy', n_jobs=-1,
+        train_sizes=np.linspace(0.1, 1.0, 5)
+    )
+    return train_sizes, np.mean(train_scores, axis=1), np.mean(test_scores, axis=1)
 
-train_mean = np.mean(train_scores, axis=1)
-test_mean = np.mean(test_scores, axis=1)
+st.subheader("📚 Learning Curve")
+train_sizes, train_mean, test_mean = get_learning_curve(clf, X_train_res, y_train_res)
 
 plt.figure()
 plt.plot(train_sizes, train_mean, label="Training Accuracy")
@@ -116,7 +121,7 @@ plt.legend()
 st.pyplot(plt.gcf())
 plt.clf()
 
-# Form Input
+# -------------------- Form Input --------------------
 st.subheader("🧮 Prediksi Risiko Diabetes")
 with st.form("form_input"):
     gender = st.selectbox("Gender:", ["Male", "Female"])
@@ -130,27 +135,28 @@ with st.form("form_input"):
     ok = st.form_submit_button("Prediksi Risiko")
 
 if ok:
-    inp = pd.DataFrame([{
-        "gender_Male": int(gender == "Male"),
-        "age": age,
-        "bmi": bmi,
-        "HbA1c_level": hba1c,
-        "blood_glucose_level": glu,
-        "hypertension": int(hypertension == "Ya"),
-        "heart_disease": int(heart == "Ya"),
-        f"smoking_history_{smoking}": 1
-    }])
-    for col in X.columns:
-        if col not in inp.columns:
-            inp[col] = 0
-    inp = inp[X.columns]
+    with st.spinner("⏳ Menghitung prediksi..."):
+        inp = pd.DataFrame([{
+            "gender_Male": int(gender == "Male"),
+            "age": age,
+            "bmi": bmi,
+            "HbA1c_level": hba1c,
+            "blood_glucose_level": glu,
+            "hypertension": int(hypertension == "Ya"),
+            "heart_disease": int(heart == "Ya"),
+            f"smoking_history_{smoking}": 1
+        }])
+        for col in X.columns:
+            if col not in inp.columns:
+                inp[col] = 0
+        inp = inp[X.columns]
 
-    prob = clf.predict_proba(inp)[0][1]
-    if prob < 0.25:
-        status = "🔵 Risiko Rendah"
-    elif prob < 0.60:
-        status = "🟡 Risiko Sedang"
-    else:
-        status = "🔴 Risiko Tinggi"
+        prob = clf.predict_proba(inp)[0][1]
+        if prob < 0.25:
+            status = "🔵 Risiko Rendah"
+        elif prob < 0.60:
+            status = "🟡 Risiko Sedang"
+        else:
+            status = "🔴 Risiko Tinggi"
 
-    st.markdown(f"### 🎯 Hasil Prediksi Terkena Diabetes: **{status}** (Peluang = {prob:.2f})")
+        st.markdown(f"### 🎯 Hasil Prediksi Terkena Diabetes: **{status}** (Peluang = {prob:.2f})")
