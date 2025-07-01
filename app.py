@@ -100,7 +100,6 @@ st.pyplot(plt.gcf())
 plt.clf()
 
 # -------------------- Learning Curve --------------------
-@st.cache_data
 def get_learning_curve(model, X, y):
     train_sizes, train_scores, test_scores = learning_curve(
         model, X, y, cv=5, scoring='accuracy', n_jobs=-1,
